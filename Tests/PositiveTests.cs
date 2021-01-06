@@ -64,5 +64,25 @@ namespace Unbreakable.Tests {
             });
             Assert.NotNull(m());
         }
+
+        [Fact]
+        public void HandlesAsyncMethods() {
+            var m = TestHelper.RewriteAndGetMethodWrappedInScope(@"
+                using System.Threading.Tasks;
+
+                class Program {
+                    bool M() => Main().Wait(100);
+
+                    async Task Main() {
+                        await Task.Yield();
+                    }
+                }
+            ", "Program", "M", new AssemblyGuardSettings {
+                ApiPolicy = ApiPolicy.SafeDefault()
+                    .Namespace("System.Runtime.CompilerServices", ApiAccess.Allowed)
+                    .Namespace("System.Threading.Tasks", ApiAccess.Allowed)
+            });
+            Assert.True(m() is true);
+        }
     }
 }

@@ -90,18 +90,42 @@ namespace Unbreakable {
 
             var isStaticConstructor = method.Name == ".cctor" && method.IsStatic && method.IsRuntimeSpecialName;
             var il = method.Body.GetILProcessor();
+            // IAsyncStateMachine.MoveNext has special rules, but to be safe, only apply them when its type is compiler-generated
+            // which is checked by verifying that it has unspeakable name
+            var isStateMachineMoveNext =
+                method.Name == "MoveNext" &&
+                method.Overrides.Count == 1 &&
+                method.Overrides[0].FullName == "System.Void System.Runtime.CompilerServices.IAsyncStateMachine::MoveNext()" &&
+                method.DeclaringType.Name.Contains("<") &&
+                il.Body.ExceptionHandlers.Count >= 1;
             var guardVariable = new VariableDefinition(guard.InstanceField.FieldType);
             il.Body.Variables.Add(guardVariable);
 
             var instructions = il.Body.Instructions;
             var start = instructions[0];
-            var skipFirst = 4;
-            il.InsertBefore(start, il.Create(OpCodes.Ldsfld, guard.InstanceField));
+            var skipStart = 0;
+            var skipCount = 4;
+
+            if (isStateMachineMoveNext) {
+                // in IAsyncStateMachine.MoveNext, the GuardEnter call has to be inside the try block, so that the exception is propagated to the Task
+                start = il.Body.ExceptionHandlers[0].TryStart;
+                skipStart = instructions.IndexOf(start);
+            }
+
+            il.InsertBeforeAndRetargetJumps(start, il.Create(OpCodes.Ldsfld, guard.InstanceField));
             il.InsertBefore(start, il.Create(OpCodes.Dup));
             il.InsertBefore(start, il.CreateStlocBest(guardVariable));
             il.InsertBefore(start, il.Create(OpCodes.Call, isStaticConstructor ? guard.GuardEnterStaticConstructorMethod : guard.GuardEnterMethod));
 
-            for (var i = skipFirst; i < instructions.Count; i++) {
+            for (var i = 0; i < instructions.Count; i++) {
+                if (i >= skipStart && i < skipStart + skipCount)
+                    continue;
+
+                // in IAsyncStateMachine.MoveNext, guard calls are only allowed inside the try block
+                if (isStateMachineMoveNext &&
+                    (i < instructions.IndexOf(il.Body.ExceptionHandlers[0].TryStart) || i > instructions.IndexOf(il.Body.ExceptionHandlers[0].TryEnd)))
+                    continue;
+
                 var instruction = instructions[i];
                 var memberRule = validator.ValidateInstructionAndGetPolicy(instruction, method);
                 var code = instruction.OpCode.Code;

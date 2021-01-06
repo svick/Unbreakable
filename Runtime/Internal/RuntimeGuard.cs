@@ -17,7 +17,7 @@ namespace Unbreakable.Runtime.Internal {
         private long _timeLimitStopwatchTicks;
         private Action<IDisposable>? _afterForcedDispose;
 
-        private long _stackBaseline;
+        private ThreadLocal<long> _stackBaseline = null!;
         private readonly Stopwatch _stopwatch;
         private int _operationCount;
         private long _allocatedCountTotal;
@@ -84,9 +84,9 @@ namespace Unbreakable.Runtime.Internal {
                 stackBaseline = _staticConstructorStackBaseline;
             }
             else {
-                if (_stackBaseline == 0)
-                    Interlocked.CompareExchange(ref _stackBaseline, stackCurrent, 0);
-                stackBaseline = _stackBaseline;
+                if (_stackBaseline.Value == 0)
+                    _stackBaseline.Value = stackCurrent;
+                stackBaseline = _stackBaseline.Value;
             }
 
             var stackBytesCount = stackBaseline - stackCurrent;
@@ -147,7 +147,7 @@ namespace Unbreakable.Runtime.Internal {
             _operationCountLimit = settings.OperationCountLimit;
             _afterForcedDispose = settings.AfterForcedDispose;
 
-            _stackBaseline = 0;
+            _stackBaseline = new ThreadLocal<long>();
             _operationCount = 0;
 
             _disposables?.Clear();
@@ -158,6 +158,7 @@ namespace Unbreakable.Runtime.Internal {
 
         internal void Stop() {
             _active = false;
+            _stackBaseline.Dispose();
             if (_disposables == null)
                 return;
             foreach (var disposable in _disposables) {
