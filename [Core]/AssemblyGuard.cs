@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
 using Unbreakable.Internal;
@@ -105,10 +106,12 @@ namespace Unbreakable {
             var start = instructions[0];
             var skipStart = 0;
             var skipCount = 4;
+            ExceptionHandler? stateMachineExceptionHandler = null;
 
             if (isStateMachineMoveNext) {
                 // in IAsyncStateMachine.MoveNext, the GuardEnter call has to be inside the try block, so that the exception is propagated to the Task
-                start = il.Body.ExceptionHandlers[0].TryStart;
+                stateMachineExceptionHandler = il.Body.ExceptionHandlers.OrderBy(eh => eh.TryStart.Offset).First();
+                start = stateMachineExceptionHandler.TryStart;
                 skipStart = instructions.IndexOf(start);
             }
 
@@ -122,8 +125,8 @@ namespace Unbreakable {
                     continue;
 
                 // in IAsyncStateMachine.MoveNext, guard calls are only allowed inside the try block
-                if (isStateMachineMoveNext &&
-                    (i < instructions.IndexOf(il.Body.ExceptionHandlers[0].TryStart) || i > instructions.IndexOf(il.Body.ExceptionHandlers[0].TryEnd)))
+                if (stateMachineExceptionHandler != null &&
+                    (i < instructions.IndexOf(stateMachineExceptionHandler.TryStart) || i > instructions.IndexOf(stateMachineExceptionHandler.TryEnd)))
                     continue;
 
                 var instruction = instructions[i];

@@ -283,5 +283,31 @@ namespace Unbreakable.Tests {
                 () => AssemblyGuard.Rewrite(compiled, new MemoryStream())
             );
         }
+
+        [Fact]
+        public void ThrowsGuardException_ForAsyncMethodWithTry() {
+            var compiled = TestHelper.Compile(@"
+                using System;
+                using System.Threading.Tasks;
+
+                class Program {
+                    async Task Main() {
+                        Console.WriteLine();
+
+                        try {
+                            await Task.Yield();
+                        } catch { }
+                    }
+                }
+            ");
+            var ex = Assert.Throws<AssemblyGuardException>(
+                () => AssemblyGuard.Rewrite(compiled, Stream.Null, new AssemblyGuardSettings {
+                    ApiPolicy = ApiPolicy.SafeDefault()
+                    .Namespace("System.Runtime.CompilerServices", ApiAccess.Allowed)
+                    .Namespace("System.Threading.Tasks", ApiAccess.Allowed)
+                })
+            );
+            Assert.Contains("System.Console", ex.Message);
+        }
     }
 }
