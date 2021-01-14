@@ -84,5 +84,29 @@ namespace Unbreakable.Tests {
             });
             Assert.True(m() is true);
         }
+
+        [Fact]
+        public void ComputesIlOffsetsCorrectly() {
+            var m = TestHelper.RewriteAndGetMethodWrappedInScope(@"
+                class Program {
+                    void M() {
+                        bool cond = true;
+                        if (cond)
+                        {
+                            M2();
+                            // produce as many nops as necessary
+                            ;;;;;;;;;; ;;;;;;;;;;
+                            ;;;;;;;;;; ;;;;;;;;;;
+                            ;;;;;;;;;; ;;;;;;;;;;
+                            ;;;;;;;;;; ;;;;;;;;;;
+                            ;;;;;;;;;; ;;;;;;;;;;
+                            ;;;;;;;;;; ;;;
+                        }
+                    }
+                    void M2() {}
+                }
+            ", "Program", "M");
+            m();
+        }
     }
 }
